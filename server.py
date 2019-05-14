@@ -8,6 +8,7 @@ import tornado.ioloop
 import tornado.web
 import errno
 import configparser
+from functools import lru_cache
 
 
 def bounds(zoom, x, y):
@@ -20,39 +21,26 @@ def bounds(zoom, x, y):
                            lnglatbbox[3]))
     return (ws[0], ws[1], en[0], en[1])
 
-
+@lru_cache(maxsize=256)
 async def get_mvt(connection_pool, zoom,x,y):
     zoom = int(zoom)
     x = int(x)
     y = int(y)
-    directory = str(zoom)+"/"+str(x)+"/"
-    try:
-        tile_file = open(directory+str(y)+".pbf", "rb")
-        final_tile = tile_file.read()
-        tile_file.close()
-    except FileNotFoundError:
-        db_connection = connection_pool.getconn()
-        cursor = db_connection.cursor()
-        b_box = bounds(zoom, x, y)
-        final_tile = b''
-        cursor.execute("SELECT ST_AsMVT(q, 'test', 4096, 'geom') "
-                       "FROM (SELECT osm_id, ST_AsMVTGeom(geometry, "
-                       "ST_MakeBox2D(ST_Point({}, {}), "
-                       "ST_Point({}, {})), 4096, 256, true) AS geom "
-                       "FROM osm_new_buildings AS geom) "
-                       "AS q;".format(*b_box))
-        for elem in cursor.fetchall():
-            final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
-        cursor.close()
-        connection_pool.putconn(db_connection)
-        try:
-            os.makedirs(directory)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-        tile_file = open(directory + str(y) + ".pbf", "wb")
-        tile_file.write(final_tile)
-        tile_file.close()
+
+    db_connection = connection_pool.getconn()
+    cursor = db_connection.cursor()
+    b_box = bounds(zoom, x, y)
+    final_tile = b''
+    cursor.execute("SELECT ST_AsMVT(q, 'test', 4096, 'geom') "
+                   "FROM (SELECT osm_id, ST_AsMVTGeom(geometry, "
+                   "ST_MakeBox2D(ST_Point({}, {}), "
+                   "ST_Point({}, {})), 4096, 256, true) AS geom "
+                   "FROM osm_new_buildings AS geom) "
+                   "AS q;".format(*b_box))
+    for elem in cursor.fetchall():
+        final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
+    cursor.close()
+    connection_pool.putconn(db_connection)
 
     return final_tile
 
@@ -71,12 +59,12 @@ class GetTile(tornado.web.RequestHandler):
 
 if __name__ == "__main__":
     print("Starting YAPPTS...")
+
     # Parse all configuration information
     config = configparser.ConfigParser()
     config.read('yappts.ini')
 
-    connection_pool = psycopg2.pool.\
-                      SimpleConnectionPool(
+    connection_pool = psycopg2.pool.SimpleConnectionPool(
                         config['POSTGRESQL']['minConnections'],
                         config['POSTGRESQL']['maxConnections'],
                         user=config['POSTGRESQL']['user'],
@@ -86,9 +74,10 @@ if __name__ == "__main__":
                         database=config['POSTGRESQL']['database'])
 
     assert connection_pool, "Could not connect with the database"
-    application = tornado.web.Application([
-        (r"/tiles/([0-9]+)/([0-9]+)/([0-9]+).pbf", GetTile,
-            dict(connection_pool=connection_pool))])
+    application = tornado.web.Application(
+                    [(r"/tiles/([0-9]+)/([0-9]+)/([0-9]+).pbf",
+                        GetTile,
+                        dict(connection_pool=connection_pool))])
     print("YAPPTS started...")
     application.listen(8888)
     tornado.ioloop.IOLoop.instance().start()
