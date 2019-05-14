@@ -7,6 +7,7 @@ import os
 import tornado.ioloop
 import tornado.web
 import errno
+import configparser
 
 
 def bounds(zoom, x, y):
@@ -69,19 +70,25 @@ class GetTile(tornado.web.RequestHandler):
 
 
 if __name__ == "__main__":
-    connection_pool = psycopg2.pool.\
-                      SimpleConnectionPool(1, 20,
-                                           user="mapas",
-                                           password="tilemill",
-                                           host="192.168.79.2",
-                                           port="5432",
-                                           database="mapes_db")
-    if connection_pool:
-        print("Connection pool created successfully")
+    print("Starting YAPPTS...")
+    # Parse all configuration information
+    config = configparser.ConfigParser()
+    config.read('yappts.ini')
 
+    connection_pool = psycopg2.pool.\
+                      SimpleConnectionPool(
+                        config['POSTGRESQL']['minConnections'],
+                        config['POSTGRESQL']['maxConnections'],
+                        user=config['POSTGRESQL']['user'],
+                        password=config['POSTGRESQL']['password'],
+                        host=config['POSTGRESQL']['host'],
+                        port=config['POSTGRESQL']['port'],
+                        database=config['POSTGRESQL']['database'])
+
+    assert connection_pool, "Could not connect with the database"
     application = tornado.web.Application([
         (r"/tiles/([0-9]+)/([0-9]+)/([0-9]+).pbf", GetTile,
             dict(connection_pool=connection_pool))])
-    print("YAPPTS started..")
+    print("YAPPTS started...")
     application.listen(8888)
     tornado.ioloop.IOLoop.instance().start()
