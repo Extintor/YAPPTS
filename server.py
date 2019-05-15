@@ -3,28 +3,36 @@ from psycopg2 import pool
 import pyproj
 import mercantile
 import io
-import os
+import os.path
 import tornado.ioloop
 import tornado.web
-import errno
+import redis
 import configparser
+import errno
 
 
-def bounds(zoom, x, y):
-    in_proj = pyproj.Proj(init='epsg:4326')
-    out_proj = pyproj.Proj(init='epsg:3857')
-    lnglatbbox = mercantile.bounds(x, y, zoom)
-    ws = (pyproj.transform(in_proj, out_proj, lnglatbbox[0],
-                           lnglatbbox[1]))
-    en = (pyproj.transform(in_proj, out_proj, lnglatbbox[2],
-                           lnglatbbox[3]))
-    return (ws[0], ws[1], en[0], en[1])
+async def save_to_cache(redis_conn, tile_id, directory, name,  tile):
+    redis_conn.set(tile_id, directory+name)
+    try:
+        os.makedirs(directory)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+    tile_file = open(directory + name + ".pbf", "wb")
+    tile_file.write(tile)
+    tile_file.close()
 
-async def get_mvt(connection_pool, zoom,x,y):
-    zoom = int(zoom)
-    x = int(x)
-    y = int(y)
 
+def retrieve_file_from_disk(location):
+    tile_file = open(location + ".pbf", "rb")
+    final_tile = tile_file.read()
+    tile_file.close()
+
+    return final_tile
+
+
+def retrieve_tile_from_db(zoom, x, y):
+    # Retrieve pbf tile info from PostgreSQL DB
     db_connection = connection_pool.getconn()
     cursor = db_connection.cursor()
     b_box = bounds(zoom, x, y)
@@ -39,19 +47,56 @@ async def get_mvt(connection_pool, zoom,x,y):
         final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
     cursor.close()
     connection_pool.putconn(db_connection)
+    return final_tile
+
+def bounds(zoom, x, y):
+    # TODO Refactor into my own function
+    in_proj = pyproj.Proj(init='epsg:4326')
+    out_proj = pyproj.Proj(init='epsg:3857')
+    lnglatbbox = mercantile.bounds(x, y, zoom)
+    ws = (pyproj.transform(in_proj, out_proj, lnglatbbox[0],
+                           lnglatbbox[1]))
+    en = (pyproj.transform(in_proj, out_proj, lnglatbbox[2],
+                           lnglatbbox[3]))
+    return ws[0], ws[1], en[0], en[1]
+
+
+async def get_mvt(connection_pool, redis_pool, zoom, x, y):
+    zoom = int(zoom)
+    x = int(x)
+    y = int(y)
+    tile_id = str(zoom) + str(x) + str(y)
+
+    # Check if file location is in Redis
+    r = redis.Redis(connection_pool=redis_pool)
+    redis_loc = r.get(tile_id)
+    try:
+        # Get tile from disk
+        final_tile = retrieve_file_from_disk(str(redis_loc)[2:-1])
+    except FileNotFoundError:
+        # Get tile from DB
+        final_tile = retrieve_tile_from_db(zoom, x, y)
+        await save_to_cache(r,
+                            tile_id,
+                            str(zoom) + "/" + str(x) + "/",
+                            str(y),
+                            final_tile)
+
 
     return final_tile
 
 
 class GetTile(tornado.web.RequestHandler):
-    def initialize(self, connection_pool):
+    def initialize(self, connection_pool, redis_pool):
         self.connection_pool = connection_pool
+        self.redis_pool = redis_pool
 
     async def get(self, zoom,x,y):
         self.set_header("Content-Type", "application/x-protobuf")
         self.set_header("Content-Disposition", "attachment")
         self.set_header("Access-Control-Allow-Origin", "*")
-        response = await get_mvt(self.connection_pool, zoom, x, y)
+        response = await get_mvt(self.connection_pool, self.redis_pool,
+                                 zoom, x, y)
         self.write(response)
 
 
@@ -59,6 +104,8 @@ if __name__ == "__main__":
     print("Starting YAPPTS...")
 
     # Parse all configuration information
+    if not os.path.exists('yappts.ini'):
+        raise FileNotFoundError("Configuration file not found")
     config = configparser.ConfigParser()
     config.read('yappts.ini')
 
@@ -71,11 +118,21 @@ if __name__ == "__main__":
                         port=config['POSTGRESQL']['port'],
                         database=config['POSTGRESQL']['database'])
 
-    assert connection_pool, "Could not connect with the database"
+    if not connection_pool:
+        raise ConnectionError("Could not connect with the PostgreSQL "
+                              "database")
+
+    redis_pool = redis.ConnectionPool(
+        host='redis-13882.c135.eu-central-1-1.ec2.cloud.redislabs.com',
+        port=13882,
+        password='dbWpteeJL36hUyfpv0Z1XoIBxHLtxJ7e')
+
     application = tornado.web.Application(
                     [(r"/tiles/([0-9]+)/([0-9]+)/([0-9]+).pbf",
                         GetTile,
-                        dict(connection_pool=connection_pool))])
+                        dict(connection_pool=connection_pool,
+                             redis_pool=redis_pool))])
+
     print("YAPPTS started...")
     application.listen(8888)
     tornado.ioloop.IOLoop.instance().start()
