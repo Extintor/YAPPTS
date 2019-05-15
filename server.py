@@ -134,5 +134,8 @@ if __name__ == "__main__":
                              redis_pool=redis_pool))])
 
     print("YAPPTS started...")
-    application.listen(8888)
-    tornado.ioloop.IOLoop.instance().start()
+    server = tornado.httpserver.HTTPServer(application)
+    server.listen(8888)
+    server.start(0)  # Forks multiple sub-processes
+    tornado.ioloop.IOLoop.current().start()
+    tornado.ioloop.IOLoop.set_blocking_log_threshold(0.05)
