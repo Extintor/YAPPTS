@@ -31,7 +31,7 @@ def retrieve_file_from_disk(location):
     return final_tile
 
 
-def retrieve_tile_from_db(zoom, x, y):
+def retrieve_tile_from_db(connection_pool, zoom, x, y):
     # Retrieve pbf tile info from PostgreSQL DB
     db_connection = connection_pool.getconn()
     cursor = db_connection.cursor()
@@ -75,7 +75,7 @@ async def get_mvt(connection_pool, redis_pool, zoom, x, y):
         final_tile = retrieve_file_from_disk(str(redis_loc)[2:-1])
     except FileNotFoundError:
         # Get tile from DB
-        final_tile = retrieve_tile_from_db(zoom, x, y)
+        final_tile = retrieve_tile_from_db(connection_pool, zoom, x, y)
         await save_to_cache(r,
                             tile_id,
                             str(zoom) + "/" + str(x) + "/",
@@ -91,7 +91,7 @@ class GetTile(tornado.web.RequestHandler):
         self.connection_pool = connection_pool
         self.redis_pool = redis_pool
 
-    async def get(self, zoom,x,y):
+    async def get(self, zoom, x, y):
         self.set_header("Content-Type", "application/x-protobuf")
         self.set_header("Content-Disposition", "attachment")
         self.set_header("Access-Control-Allow-Origin", "*")
@@ -121,7 +121,7 @@ if __name__ == "__main__":
     if not connection_pool:
         raise ConnectionError("Could not connect with the PostgreSQL "
                               "database")
-
+    # TODO Fix caching, slower than generating tiles?
     redis_pool = redis.ConnectionPool(
         host='redis-13882.c135.eu-central-1-1.ec2.cloud.redislabs.com',
         port=13882,
