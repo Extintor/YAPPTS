@@ -109,7 +109,7 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read('yappts.ini')
 
-    connection_pool = psycopg2.pool.SimpleConnectionPool(
+    connection_pool = psycopg2.pool.ThreadedConnectionPool(
                         config['POSTGRESQL']['minConnections'],
                         config['POSTGRESQL']['maxConnections'],
                         user=config['POSTGRESQL']['user'],
