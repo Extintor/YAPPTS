@@ -15,16 +15,23 @@ def retrieve_tile_from_db(connection_pool, zoom, x, y):
     cursor = db_connection.cursor()
     b_box = bounds(zoom, x, y)
     final_tile = b''
-    cursor.execute("SELECT ST_AsMVT(q, 'test', 4096, 'geom') "
+    try:
+        cursor.execute("SELECT ST_AsMVT(q, 'test', 4096, 'geom') "
                    "FROM (SELECT osm_id, ST_AsMVTGeom(geometry, "
                    "ST_MakeBox2D(ST_Point({}, {}), "
                    "ST_Point({}, {})), 4096, 256, true) AS geom "
                    "FROM osm_new_buildings AS geom) "
                    "AS q;".format(*b_box))
-    for elem in cursor.fetchall():
-        final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
-    cursor.close()
-    connection_pool.putconn(db_connection)
+        for elem in cursor.fetchall():
+            final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
+        cursor.close()
+        connection_pool.putconn(db_connection)
+    except psycopg2.OperationalError:
+        # connection got picked by another thread, retry
+        cursor.close()
+        connection_pool.putconn(db_connection)
+        final_tile = retrieve_tile_from_db(connection_pool, zoom, x, y)
+
     return final_tile
 
 def bounds(zoom, x, y):
@@ -39,7 +46,7 @@ def bounds(zoom, x, y):
     return ws[0], ws[1], en[0], en[1]
 
 
-async def get_mvt(connection_pool, redis_pool, zoom, x, y):
+async def get_mvt(connection_pool, zoom, x, y):
     zoom = int(zoom)
     x = int(x)
     y = int(y)
@@ -55,7 +62,7 @@ async def get_mvt(connection_pool, redis_pool, zoom, x, y):
 
 
 class GetTile(tornado.web.RequestHandler):
-    def initialize(self, connection_pool, redis_pool):
+    def initialize(self, connection_pool):
         self.connection_pool = connection_pool
 
     async def get(self, zoom, x, y):
@@ -98,6 +105,6 @@ if __name__ == "__main__":
     print("YAPPTS started...")
     server = tornado.httpserver.HTTPServer(application)
     server.listen(8888)
-    server.start(0)  # Forks multiple sub-processes
+    server.start(6)  # Forks multiple sub-processes
     tornado.ioloop.IOLoop.current().start()
     tornado.ioloop.IOLoop.set_blocking_log_threshold(0.05)
