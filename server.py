@@ -8,7 +8,6 @@ import tornado.ioloop
 import tornado.web
 import errno
 import configparser
-from functools import lru_cache
 
 
 def bounds(zoom, x, y):
@@ -21,7 +20,6 @@ def bounds(zoom, x, y):
                            lnglatbbox[3]))
     return (ws[0], ws[1], en[0], en[1])
 
-@lru_cache(maxsize=256)
 async def get_mvt(connection_pool, zoom,x,y):
     zoom = int(zoom)
     x = int(x)
