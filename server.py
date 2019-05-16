@@ -83,7 +83,7 @@ if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read('yappts.ini')
 
-    connection_pool = psycopg2.pool.ThreadedConnectionPool(
+    connection_pool = psycopg2.pool.SimpleConnectionPool(
                         config['POSTGRESQL']['minConnections'],
                         config['POSTGRESQL']['maxConnections'],
                         user=config['POSTGRESQL']['user'],
@@ -105,6 +105,5 @@ if __name__ == "__main__":
     print("YAPPTS started...")
     server = tornado.httpserver.HTTPServer(application)
     server.listen(8888)
-    server.start(6)  # Forks multiple sub-processes
+    server.start(1)
     tornado.ioloop.IOLoop.current().start()
-    tornado.ioloop.IOLoop.set_blocking_log_threshold(0.05)
