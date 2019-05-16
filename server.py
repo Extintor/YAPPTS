@@ -15,22 +15,17 @@ def retrieve_tile_from_db(connection_pool, zoom, x, y):
     cursor = db_connection.cursor()
     b_box = bounds(zoom, x, y)
     final_tile = b''
-    try:
-        cursor.execute("SELECT ST_AsMVT(q, 'test', 4096, 'geom') "
-                   "FROM (SELECT osm_id, ST_AsMVTGeom(geometry, "
-                   "ST_MakeBox2D(ST_Point({}, {}), "
-                   "ST_Point({}, {})), 4096, 256, true) AS geom "
-                   "FROM osm_new_buildings AS geom) "
-                   "AS q;".format(*b_box))
-        for elem in cursor.fetchall():
-            final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
-        cursor.close()
-        connection_pool.putconn(db_connection)
-    except psycopg2.OperationalError:
-        # connection got picked by another thread, retry
-        cursor.close()
-        connection_pool.putconn(db_connection)
-        final_tile = retrieve_tile_from_db(connection_pool, zoom, x, y)
+
+    cursor.execute("SELECT ST_AsMVT(q, 'test', 4096, 'geom') "
+               "FROM (SELECT osm_id, ST_AsMVTGeom(geometry, "
+               "ST_MakeBox2D(ST_Point({}, {}), "
+               "ST_Point({}, {})), 4096, 256, true) AS geom "
+               "FROM osm_new_buildings AS geom) "
+               "AS q;".format(*b_box))
+    for elem in cursor.fetchall():
+        final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
+    cursor.close()
+    connection_pool.putconn(db_connection)
 
     return final_tile
 
@@ -43,6 +38,7 @@ def bounds(zoom, x, y):
                            lnglatbbox[1]))
     en = (pyproj.transform(in_proj, out_proj, lnglatbbox[2],
                            lnglatbbox[3]))
+
     return ws[0], ws[1], en[0], en[1]
 
 
@@ -50,13 +46,7 @@ async def get_mvt(connection_pool, zoom, x, y):
     zoom = int(zoom)
     x = int(x)
     y = int(y)
-    tile_id = str(zoom) + str(x) + str(y)
-
-
-
-    # Get tile from DB
-    final_tile = retrieve_tile_from_db(connection_pool, zoom, x, y)
-
+    final_tile = retrieve_tile_from_db(connection_pool, zoom, x, y) # Get tile from DB
 
     return final_tile
 
