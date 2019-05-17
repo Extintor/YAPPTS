@@ -3,11 +3,13 @@ import server
 from unittest import mock
 import psycopg2
 from psycopg2 import pool
+import asyncio
 
 
 class Test(unittest.TestCase):
+
     def setUp(self):
-        pass
+        self.loop = asyncio.get_event_loop()  # get ioloop
 
     def test_bounds(self):
         self.assertEqual(server.bounds(11, 2456, 7891), (-12053813.612459153, -134392195.17180088, -12034245.733218145,
@@ -24,6 +26,15 @@ class Test(unittest.TestCase):
 
         result = server.retrieve_tile_from_db(mock_pool_connection, 11, 5, 25)
         self.assertEqual(result, query_result)
+
+    @mock.patch('server.retrieve_tile_from_db')
+    def test_get_mvt(self, mock_retrieve):
+        mock_retrieve.return_value = b'\x1a320a0474657374121d1202000018032215095aa63\xf1a134631130a270f09280a121d0a14140f1a026331'
+
+        expected = (b'\x1a320a0474657374121d1202000018032215095aa63\xf1a134631130a270f09280a121d0a14140f1a026331')
+        result = self.loop.run_until_complete(server.get_mvt(0, 11, 5, 25))
+        self.assertEqual(result, expected)
+
 
 if __name__ == '__main__':
     unittest.main()

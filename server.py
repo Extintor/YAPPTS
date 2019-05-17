@@ -25,7 +25,6 @@ def retrieve_tile_from_db(connection_pool, zoom, x, y):
         final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
     cursor.close()
     connection_pool.putconn(db_connection)
-    print(final_tile)
     return final_tile
 
 def bounds(zoom, x, y):
