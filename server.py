@@ -15,7 +15,6 @@ def retrieve_tile_from_db(connection_pool, zoom, x, y):
     cursor = db_connection.cursor()
     b_box = bounds(zoom, x, y)
     final_tile = b''
-
     cursor.execute("SELECT ST_AsMVT(q, 'test', 4096, 'geom') "
                "FROM (SELECT osm_id, ST_AsMVTGeom(geometry, "
                "ST_MakeBox2D(ST_Point({}, {}), "
@@ -26,7 +25,7 @@ def retrieve_tile_from_db(connection_pool, zoom, x, y):
         final_tile = final_tile + io.BytesIO(elem[0]).getvalue()
     cursor.close()
     connection_pool.putconn(db_connection)
-
+    print(final_tile)
     return final_tile
 
 def bounds(zoom, x, y):
@@ -46,12 +45,13 @@ async def get_mvt(connection_pool, zoom, x, y):
     zoom = int(zoom)
     x = int(x)
     y = int(y)
-    final_tile = retrieve_tile_from_db(connection_pool, zoom, x, y) # Get tile from DB
+    # Get tile from DB
+    final_tile = retrieve_tile_from_db(connection_pool, zoom, x, y)
 
     return final_tile
 
 
-class GetTile(tornado.web.RequestHandler):
+class get_tile(tornado.web.RequestHandler):
     def initialize(self, connection_pool):
         self.connection_pool = connection_pool
 
@@ -89,8 +89,8 @@ if __name__ == "__main__":
 
     application = tornado.web.Application(
                     [(r"/tiles/([0-9]+)/([0-9]+)/([0-9]+).pbf",
-                        GetTile,
-                        dict(connection_pool=connection_pool))])
+                     get_tile,
+                     dict(connection_pool=connection_pool))])
 
     print("YAPPTS started...")
     server = tornado.httpserver.HTTPServer(application)
