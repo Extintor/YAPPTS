@@ -6,6 +6,7 @@ import io
 import os.path
 import tornado.ioloop
 import tornado.web
+import tornado.httpserver
 import configparser
 
 
@@ -26,6 +27,7 @@ def retrieve_tile_from_db(connection_pool, zoom, x, y):
     cursor.close()
     connection_pool.putconn(db_connection)
     return final_tile
+
 
 def bounds(zoom, x, y):
     # TODO Refactor into my own function
@@ -84,7 +86,6 @@ if __name__ == "__main__":
     if not connection_pool:
         raise ConnectionError("Could not connect with the PostgreSQL "
                               "database")
-
 
     application = tornado.web.Application(
                     [(r"/tiles/([0-9]+)/([0-9]+)/([0-9]+).pbf",

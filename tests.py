@@ -4,8 +4,7 @@ from unittest import mock
 import psycopg2
 from psycopg2 import pool
 import asyncio
-import tornado.web
-
+import tornado.testing
 
 
 class Test(unittest.TestCase):
@@ -25,7 +24,7 @@ class Test(unittest.TestCase):
         mock_pool_connection = psycopg2.pool.SimpleConnectionPool(0, 0, 0, 0, 0, 0)
 
         expected = (b'\x1a320a0474657374121d1202000018032215095aa63'
-                        b'\xf1a134631130a270f09280a121d0a14140f1a026331')
+                    b'\xf1a134631130a270f09280a121d0a14140f1a026331')
 
         result = server.retrieve_tile_from_db(mock_pool_connection, 11, 5, 25)
         self.assertEqual(result, expected)
@@ -41,9 +40,10 @@ class Test(unittest.TestCase):
         self.assertEqual(result, expected)
 
     @mock.patch('psycopg2.pool.SimpleConnectionPool')
-    @mock.patch('tornado.web.Application')
-    def test_get_tile_init(self, mock_pool, mock_app):
-        result = server.get_tile()
+    def test_get_tile_init(self, mock_pool):
+        mock_pool.return_value = "TEST"
+        # result = server.get_tile(tornado.web.RequestHandler, mock_pool)
+        # print(result.connection_pool)
         
 
 if __name__ == '__main__':
